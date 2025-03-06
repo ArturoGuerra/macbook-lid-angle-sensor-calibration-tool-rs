@@ -28,8 +28,3 @@ rustflags = [
 # flip link changes the memoery layout so the stack is at the end, normally
 # its .stack then .bss+.data but with flip link its .bss+.data and then .stack
 linker = "flip-link"
-
-
-# This runner will make a UF2 file and then copy it to a mounted RP2040 in USB
-# Bootloader mode:
-runner = "elf2uf2-rs -d"
