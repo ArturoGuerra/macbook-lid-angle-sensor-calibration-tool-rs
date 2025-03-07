@@ -8,8 +8,8 @@ use panic_halt as _;
 
 use rp2040_hal::{
     self as hal,
-    gpio::{Pin, PinId, SioOutput},
-    spi::{SpiDevice, ValidSpiPinout},
+    gpio::{Pin, PinId, PinState, SioOutput},
+    spi::ValidSpiPinout,
 };
 
 //use cortex_m::prelude::*;
@@ -17,7 +17,8 @@ use hal::gpio::{FunctionSio, PullDown};
 use hal::{clocks::Clock, fugit::RateExtU32, pac};
 
 // Embedded Hal traits
-use embedded_hal::{delay::DelayNs, digital::OutputPin};
+use embedded_hal::{delay::DelayNs, digital::OutputPin, spi::SpiDevice};
+use embedded_hal_bus::spi::ExclusiveDevice;
 
 #[unsafe(link_section = ".boot2")]
 #[used]
@@ -47,28 +48,77 @@ fn angle() -> Angle {
     Angle::Open
 }
 
-struct Calibrator<S: hal::spi::State, D: SpiDevice, P: ValidSpiPinout<D>, const DS: u8, I: PinId> {
-    spi: hal::spi::Spi<S, D, P, DS>,
-    cs_pin: Pin<I, FunctionSio<SioOutput>, PullDown>,
+struct Calibrator<SD> {
+    dev: SD,
 }
 
-impl<S: hal::spi::State, D: SpiDevice, P: ValidSpiPinout<D>, const DS: u8, I: PinId>
-    Calibrator<S, D, P, DS, I>
+impl<SD> Calibrator<SD>
+where
+    SD: SpiDevice,
 {
-    fn new(
-        spi: hal::spi::Spi<S, D, P, DS>,
-        cs_pin: Pin<I, FunctionSio<SioOutput>, PullDown>,
-    ) -> Self {
-        Self { spi, cs_pin }
+    fn new(dev: SD) -> Self {
+        Self { dev }
     }
 
     // Writes a value to a register and verifies its content afterwards.
-    fn write_register(addr: u16, value: u16) -> bool {
-        false
+    fn write_register(&mut self, addr: u8, value: u8) -> bool {
+        self.dev
+            .write(&[addr, value])
+            .map_or_else(|_| false, |_| true)
     }
 
     fn angle_degrees(&self) -> Option<u8> {
         Some(1)
+    }
+
+    fn set_zero_angle(&self) {}
+
+    fn calibrate_pro(&mut self) {
+        self.write_register(10, 0);
+        self.write_register(28, 0);
+        self.write_register(29, 0);
+        self.write_register(2, 0);
+        self.write_register(3, 0);
+        self.write_register(4, 232);
+        self.write_register(5, 3);
+        self.write_register(6, 1);
+        self.write_register(7, 135);
+        self.write_register(8, 4);
+        self.write_register(9, 0);
+        self.write_register(11, 248);
+        self.write_register(12, 130);
+        self.write_register(13, 0);
+        self.write_register(14, 128);
+        self.write_register(15, 201);
+        self.write_register(16, 20);
+        self.write_register(17, 1);
+        self.write_register(18, 147);
+        self.write_register(22, 1);
+        self.write_register(30, 255);
+    }
+
+    fn calbrate_air(&mut self) {
+        self.write_register(10, 202);
+        self.write_register(28, 0);
+        self.write_register(29, 0);
+        self.write_register(2, 144);
+        self.write_register(3, 0);
+        self.write_register(4, 232);
+        self.write_register(5, 3);
+        self.write_register(6, 61);
+        self.write_register(7, 135);
+        self.write_register(8, 59);
+        self.write_register(9, 130);
+        self.write_register(11, 246);
+        self.write_register(12, 130);
+        self.write_register(13, 0);
+        self.write_register(14, 128);
+        self.write_register(15, 201);
+        self.write_register(16, 20);
+        self.write_register(17, 1);
+        self.write_register(18, 147);
+        self.write_register(22, 1);
+        self.write_register(30, 255);
     }
 }
 
@@ -104,15 +154,17 @@ fn main() -> ! {
     let spi_sck = pins.gpio2.into_function::<hal::gpio::FunctionSpi>();
     let spi_mosi = pins.gpio3.into_function::<hal::gpio::FunctionSpi>();
     let spi_miso = pins.gpio4.into_function::<hal::gpio::FunctionSpi>();
-    let cs_pin = pins.gpio5.into_push_pull_output();
-    let spi = hal::spi::Spi::<_, _, _, 8>::new(pac.SPI0, (spi_mosi, spi_miso, spi_sck)).init(
+    let spi_cs = pins.gpio5.into_push_pull_output_in_state(PinState::High);
+    let spi_bus = hal::spi::Spi::<_, _, _, 8>::new(pac.SPI0, (spi_mosi, spi_miso, spi_sck)).init(
         &mut pac.RESETS,
         clocks.peripheral_clock.freq(),
         16_u32.MHz(),
         embedded_hal::spi::MODE_0,
     );
 
-    let calibrator = Calibrator::new(spi, cs_pin);
+    let spi_device = ExclusiveDevice::new(spi_bus, spi_cs, timer).unwrap();
+
+    let calibrator = Calibrator::new(spi_device);
 
     loop {
         led.set_high().unwrap();
