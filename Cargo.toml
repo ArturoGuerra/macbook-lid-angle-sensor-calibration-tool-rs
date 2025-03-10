@@ -8,9 +8,16 @@ cortex-m = "0.7.7"
 cortex-m-rt = "0.7.5"
 critical-section = "1.2.0"
 defmt = "0.3.10"
+#embedded-alloc = "0.6.0"
 embedded-hal = "1.0.0"
 embedded-hal-bus = "0.3.0"
 fugit = "0.3.7"
 panic-halt = "1.0.0"
 rp2040-boot2 = "0.3.0"
-rp2040-hal = { version = "0.11.0", features = ["binary-info", "critical-section-impl", "rt", "defmt"] }
+rp2040-hal = { version = "0.11.0", features = [
+    "binary-info",
+    "critical-section-impl",
+    "rt",
+    "defmt",
+] }
+thiserror = { version = "2.0.12", default-features = false }

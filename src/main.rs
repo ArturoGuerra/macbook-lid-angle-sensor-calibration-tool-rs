@@ -1,20 +1,17 @@
 #![no_std]
 #![no_main]
 
-use core::convert::Infallible;
+//extern crate alloc;
 
 // Ensure we halt on panic.
 use panic_halt as _;
 
-use rp2040_hal::{
-    self as hal,
-    gpio::{Pin, PinId, PinState, SioOutput},
-    spi::ValidSpiPinout,
-};
+use rp2040_hal as hal;
 
-//use cortex_m::prelude::*;
-use hal::gpio::{FunctionSio, PullDown};
-use hal::{clocks::Clock, fugit::RateExtU32, pac};
+use core::{f64, fmt::Display};
+//use embedded_alloc::LlffHeap as Heap;
+
+use hal::{clocks::Clock, fugit::RateExtU32, gpio::PinState, pac};
 
 // Embedded Hal traits
 use embedded_hal::{delay::DelayNs, digital::OutputPin, spi::SpiDevice};
@@ -27,103 +24,142 @@ pub static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_GENERIC_03H;
 // Pi Pico frequency of 12Mhz.
 const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 
-enum Angle {
-    Open,
-    Close,
-    Unknown(u8),
+//#[global_allocator]
+//static HEAP: Heap = Heap::empty();
+
+#[derive(thiserror::Error, Debug)]
+enum Error<SD>
+where
+    SD: SpiDevice + ?Sized,
+    <SD as embedded_hal::spi::ErrorType>::Error: Display,
+{
+    SpiDevice(#[source] <SD as embedded_hal::spi::ErrorType>::Error),
 }
 
-impl Angle {
-    fn is_open(&self) -> bool {
-        matches!(self, Angle::Open)
-    }
+trait Calibrator
+where
+    Self: SpiDevice,
+    <Self as embedded_hal::spi::ErrorType>::Error: Display,
+{
+    fn write_register(&mut self, addr: u16, value: u16) -> Result<(), Error<Self>>;
 
-    fn is_close(&self) -> bool {
-        matches!(self, Angle::Close)
-    }
+    fn get_angle(&mut self) -> Result<u16, Error<Self>>;
+
+    fn set_zero_angle(&mut self) -> Result<(), Error<Self>>;
+
+    fn store_regs_to_nvm(&mut self) -> Result<(), Error<Self>>;
+
+    fn restore_regs_from_nvm(&mut self) -> Result<(), Error<Self>>;
+
+    fn calibrate_air(&mut self) -> Result<(), Error<Self>>;
+    fn calibrate_pro(&mut self) -> Result<(), Error<Self>>;
 }
 
-// Gets the current angle of the sensor.
-fn angle() -> Angle {
-    Angle::Open
-}
-
-struct Calibrator<SD> {
-    dev: SD,
-}
-
-impl<SD> Calibrator<SD>
+impl<SD> Calibrator for SD
 where
     SD: SpiDevice,
+    <SD as embedded_hal::spi::ErrorType>::Error: Display,
 {
-    fn new(dev: SD) -> Self {
-        Self { dev }
-    }
-
     // Writes a value to a register and verifies its content afterwards.
-    fn write_register(&mut self, addr: u8, value: u8) -> bool {
-        self.dev
-            .write(&[addr, value])
-            .map_or_else(|_| false, |_| true)
+    #[inline]
+    fn write_register(&mut self, addr: u16, value: u16) -> Result<(), Error<SD>> {
+        //self.write(&[addr, value]).map_err(Error::SpiDevice)?;
+        Ok(())
     }
 
-    fn angle_degrees(&self) -> Option<u8> {
-        Some(1)
+    fn get_angle(&mut self) -> Result<u16, Error<Self>> {
+        Ok(1)
     }
 
-    fn set_zero_angle(&self) {}
-
-    fn calibrate_pro(&mut self) {
-        self.write_register(10, 0);
-        self.write_register(28, 0);
-        self.write_register(29, 0);
-        self.write_register(2, 0);
-        self.write_register(3, 0);
-        self.write_register(4, 232);
-        self.write_register(5, 3);
-        self.write_register(6, 1);
-        self.write_register(7, 135);
-        self.write_register(8, 4);
-        self.write_register(9, 0);
-        self.write_register(11, 248);
-        self.write_register(12, 130);
-        self.write_register(13, 0);
-        self.write_register(14, 128);
-        self.write_register(15, 201);
-        self.write_register(16, 20);
-        self.write_register(17, 1);
-        self.write_register(18, 147);
-        self.write_register(22, 1);
-        self.write_register(30, 255);
+    fn set_zero_angle(&mut self) -> Result<(), Error<Self>> {
+        Ok(())
     }
 
-    fn calbrate_air(&mut self) {
-        self.write_register(10, 202);
-        self.write_register(28, 0);
-        self.write_register(29, 0);
-        self.write_register(2, 144);
-        self.write_register(3, 0);
-        self.write_register(4, 232);
-        self.write_register(5, 3);
-        self.write_register(6, 61);
-        self.write_register(7, 135);
-        self.write_register(8, 59);
-        self.write_register(9, 130);
-        self.write_register(11, 246);
-        self.write_register(12, 130);
-        self.write_register(13, 0);
-        self.write_register(14, 128);
-        self.write_register(15, 201);
-        self.write_register(16, 20);
-        self.write_register(17, 1);
-        self.write_register(18, 147);
-        self.write_register(22, 1);
-        self.write_register(30, 255);
+    fn store_regs_to_nvm(&mut self) -> Result<(), Error<Self>> {
+        Ok(())
+    }
+
+    fn restore_regs_from_nvm(&mut self) -> Result<(), Error<Self>> {
+        Ok(())
+    }
+
+    fn calibrate_air(&mut self) -> Result<(), Error<Self>> {
+        self.write_register(10, 202)?;
+        self.write_register(28, 0)?;
+        self.write_register(29, 0)?;
+        self.write_register(2, 144)?;
+        self.write_register(3, 0)?;
+        self.write_register(4, 232)?;
+        self.write_register(5, 3)?;
+        self.write_register(6, 61)?;
+        self.write_register(7, 135)?;
+        self.write_register(8, 59)?;
+        self.write_register(9, 130)?;
+        self.write_register(11, 246)?;
+        self.write_register(12, 130)?;
+        self.write_register(13, 0)?;
+        self.write_register(14, 128)?;
+        self.write_register(15, 201)?;
+        self.write_register(16, 20)?;
+        self.write_register(17, 1)?;
+        self.write_register(18, 147)?;
+        self.write_register(22, 1)?;
+        self.write_register(30, 255)?;
+        self.set_zero_angle()?;
+        //TODO: Delay for 1ms
+        self.store_regs_to_nvm()?;
+        //TODO: Delay for 1ms
+        self.restore_regs_from_nvm()?;
+        self.write_register(10, 202)?;
+        //TODO: Delay for 100ms
+        self.get_angle()?;
+        Ok(())
+    }
+
+    fn calibrate_pro(&mut self) -> Result<(), Error<Self>> {
+        self.write_register(10, 0)?;
+        self.write_register(28, 0)?;
+        self.write_register(29, 0)?;
+        self.write_register(2, 0)?;
+        self.write_register(3, 0)?;
+        self.write_register(4, 232)?;
+        self.write_register(5, 3)?;
+        self.write_register(6, 1)?;
+        self.write_register(7, 135)?;
+        self.write_register(8, 4)?;
+        self.write_register(9, 0)?;
+        self.write_register(11, 248)?;
+        self.write_register(12, 130)?;
+        self.write_register(13, 0)?;
+        self.write_register(14, 128)?;
+        self.write_register(15, 201)?;
+        self.write_register(16, 20)?;
+        self.write_register(17, 1)?;
+        self.write_register(18, 147)?;
+        self.write_register(22, 1)?;
+        self.write_register(30, 255)?;
+        self.set_zero_angle()?;
+        //TODO: Delay for 1ms
+        self.store_regs_to_nvm()?;
+        //TODO: Delay for 1ms
+        self.restore_regs_from_nvm()?;
+        self.write_register(10, 202)?;
+        //TODO: Delay for 100ms
+        self.get_angle()?;
+        Ok(())
     }
 }
 
 #[hal::entry]
 fn main() -> ! {
+    // Initialize the allocator BEFORE you use it
+    //    {
+    //        use core::mem::MaybeUninit;
+    //        const HEAP_SIZE: usize = 1024;
+    //        static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
+    //        unsafe { HEAP.init(&raw mut HEAP_MEM as usize, HEAP_SIZE) }
+    //    }
+
     let mut pac = pac::Peripherals::take().unwrap();
     let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
 
@@ -162,9 +198,8 @@ fn main() -> ! {
         embedded_hal::spi::MODE_0,
     );
 
-    let spi_device = ExclusiveDevice::new(spi_bus, spi_cs, timer).unwrap();
-
-    let calibrator = Calibrator::new(spi_device);
+    // Creates SPI Device.
+    let sd = ExclusiveDevice::new(spi_bus, spi_cs, timer).unwrap();
 
     loop {
         led.set_high().unwrap();
